@@ -1,0 +1,5 @@
+tetpyclient
+ipaddress
+urllib3
+treelib
+aide-python-agent @ git+https://wwwin-github.cisco.com/AIDE/aide-python-agent.git

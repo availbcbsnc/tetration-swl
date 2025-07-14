@@ -1,0 +1,178 @@
+pipeline {
+    environment {
+        GIT_CREDS = credentials('7eadea66-0237-41ad-8280-ea070ab1219e')
+        ARTIFACTORY_CREDS = credentials('b495afcd-e332-4443-86a2-687aaa2c7f8e')
+        REGISTRY = 'containers.cisco.com'
+        REGISTRY_URL = "https://$REGISTRY"
+        ECH_ORG = 'aide'
+        ECH_REPO = 'tetration-python-tools'
+        ECH_PATH = "${REGISTRY}/${ECH_ORG}/${ECH_REPO}"
+        ECH_CREDENTIALS = '70d73668-c133-45cc-9943-cc32f1830945'
+    }
+    agent {
+        label 'AMER-REGION'
+    }
+    stages {
+        stage('Build') {
+            steps {
+                sh '''
+                    make build-container
+                '''
+            }
+        }
+        stage('Test') {
+            parallel {
+                stage('Test Bandit') {
+                    options { skipDefaultCheckout true }
+                    agent {
+                        docker {
+                            image 'containers.cisco.com/aide/static-analysis-tools'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh '''
+                            cd ${WORKSPACE}
+                            bandit -r --ini setup.cfg
+                        '''
+                    }
+                }
+                // stage('Test Code') {
+                //     options { skipDefaultCheckout true }
+                //     agent {
+                //         docker {
+                //             image 'containers.cisco.com/aide/static-analysis-tools'
+                //             reuseNode true
+                //         }
+                //     }
+                //     steps {
+                //         sh '''
+                //             cd ${WORKSPACE}
+                //             make tox
+                //             make display-coverage-report
+                //             '''
+                //     }
+                //     post {
+                //         success {
+                //             junit 'build/reports/**/*.xml'
+                //         }
+                //     }
+                // }
+                stage('Test Build') {
+                    options { skipDefaultCheckout true }
+                    agent {
+                        docker {
+                            image 'containers.cisco.com/aide/static-analysis-tools'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh '''
+                            cd ${WORKSPACE}
+                            make check
+                        '''
+                    }
+                }
+                stage('Test Documentation') {
+                    agent {
+                        docker {
+                            image 'containers.cisco.com/aide/sphinx-tools'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh '''
+                            pip install -r requirements.txt
+                            make create-module-docs
+                            make html
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Publish') {
+            parallel {
+                stage('Publish tag') {
+                    options { skipDefaultCheckout true }
+                    steps {
+                        sh "docker tag $ECH_PATH $ECH_PATH:$TAG_NAME"
+                        withDockerRegistry([ credentialsId: '70d73668-c133-45cc-9943-cc32f1830945', url: "$REGISTRY_URL" ]) {
+                            sh """
+                                docker push $ECH_PATH:$TAG_NAME
+                            """
+                        }
+                    }
+                    when {
+                        beforeAgent true
+                        buildingTag()
+                    }
+                }
+                stage('Publish latest') {
+                    options { skipDefaultCheckout true }
+                    steps {
+                        sh "docker tag $ECH_PATH $ECH_PATH:latest"
+                        withDockerRegistry([ credentialsId: '70d73668-c133-45cc-9943-cc32f1830945', url: "$REGISTRY_URL" ]) {
+                            sh """
+                                docker push $ECH_PATH:latest
+                            """
+                        }
+                    }
+                    when {
+                        beforeAgent true
+                        allOf {
+                            buildingTag()
+                            expression {
+                                MASTER_COMMIT = sh(returnStdout: true, script: 'git rev-parse origin/master').trim()
+                                LATEST_TAG = sh(returnStdout: true, script: "git rev-list -n 1 ${TAG_NAME}").trim()
+                                return MASTER_COMMIT == LATEST_TAG
+                            }
+                        }
+                    }
+                }
+                stage('Publish Package') {
+                    options { skipDefaultCheckout true }
+                    agent {
+                        docker {
+                            image 'containers.cisco.com/aide/static-analysis-tools'
+                            reuseNode true
+                        }
+                    }
+                    when {
+                        beforeAgent true
+                        buildingTag()
+                    }
+                    steps {
+                        sh '''
+                            cd ${WORKSPACE}
+                            export TWINE_USERNAME=${ARTIFACTORY_CREDS_USR}
+                            export TWINE_PASSWORD=${ARTIFACTORY_CREDS_PSW}
+                            make upload
+                        '''
+                    }
+                }
+                stage('Publish Docs') {
+                    when {
+                        branch 'master'
+                        beforeAgent true
+                    }
+                    agent {
+                        docker {
+                            args '-u root:sudo'
+                            image 'containers.cisco.com/aide/sphinx-tools'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        sh '''
+                            pip install -r requirements.txt
+                            make create-module-docs
+                            make html
+                            gh-pages -r $GIT_URL -t --dist build/html
+                            chown -R 50006269:25 ${WORKSPACE}
+                        '''
+                    }
+                }
+            }
+        }
+    }
+}
