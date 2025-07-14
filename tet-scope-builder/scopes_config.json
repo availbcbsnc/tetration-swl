@@ -1,0 +1,45 @@
+{
+ "ScopeAutomationTesting": {
+  "columns": [
+   "Net Org",
+   "Net Region",
+   "Net Type",
+   "App Name",
+   "App Env",
+   "Location"
+  ],
+  "abbreviations": {
+   "Net Org": {
+    "ACME": null
+   },
+   "Net Region": {
+    "APJ": null,
+    "EMEAR": null,
+    "US": null
+   },
+   "Net Type": {
+    "Campus": null,
+    "Data Centre": null
+   },
+   "App Env": {
+    "Production": null,
+    "Test": null,
+    "Dev": null,
+    "UAT": null,
+    "DR": null
+   },
+   "Location": {
+    "AU": null,
+    "HK": null,
+    "UK": null,
+    "NL": null,
+    "NY": null,
+    "CA": null,
+    "NC": null
+   },
+   "App Name": {
+    "SAP, HANA": "SAP HANA"
+   }
+  }
+ }
+}
